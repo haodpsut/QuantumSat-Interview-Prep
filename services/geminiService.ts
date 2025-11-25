@@ -1,10 +1,6 @@
 import { GoogleGenAI, Type, Schema } from "@google/genai";
 import { InterviewQuestion, RoleType, Topic } from "../types";
 
-// Initialize Gemini Client
-// Ensure the API Key is read from the environment variable as per Vercel/Build settings
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
 const responseSchema: Schema = {
   type: Type.ARRAY,
   items: {
@@ -34,11 +30,43 @@ const responseSchema: Schema = {
   },
 };
 
+// Helper to safely get API Key from various build tool conventions
+const getApiKey = (): string | undefined => {
+  // Check standard Node/CRA
+  if (process.env.API_KEY) return process.env.API_KEY;
+  if (process.env.REACT_APP_API_KEY) return process.env.REACT_APP_API_KEY;
+  
+  // Check Vite (import.meta.env)
+  try {
+    // @ts-ignore
+    if (import.meta.env && import.meta.env.VITE_API_KEY) {
+      // @ts-ignore
+      return import.meta.env.VITE_API_KEY;
+    }
+  } catch (e) {
+    // Ignore error if import.meta is not supported
+  }
+
+  return undefined;
+};
+
 export const generateQuestionBatch = async (
   role: RoleType,
   batchSize: number,
   batchIndex: number
 ): Promise<InterviewQuestion[]> => {
+  
+  // LAZY INITIALIZATION: Only create the client when needed.
+  // This prevents the "White Screen of Death" if the key is missing on app load.
+  const apiKey = getApiKey();
+  
+  if (!apiKey) {
+    console.error("API Key is missing. Checked: API_KEY, REACT_APP_API_KEY, VITE_API_KEY");
+    throw new Error("AUTHENTICATION_FAILED");
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
+
   // Using a very direct prompt to ensure speed.
   const prompt = `
     Generate ${batchSize} interview questions for a ${role} candidate.
