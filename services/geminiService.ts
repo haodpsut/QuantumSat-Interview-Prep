@@ -2,6 +2,7 @@ import { GoogleGenAI, Type, Schema } from "@google/genai";
 import { InterviewQuestion, RoleType, Topic } from "../types";
 
 // Initialize Gemini Client
+// Ensure the API Key is read from the environment variable as per Vercel/Build settings
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 const responseSchema: Schema = {
@@ -74,9 +75,16 @@ export const generateQuestionBatch = async (
       ...item,
       id: `batch-${batchIndex}-q-${index}-${Date.now()}-${Math.random()}`,
     }));
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error generating batch:", error);
-    // Return empty array instead of throwing to allow other workers to continue
+    
+    // Check for specific API Key errors to give better feedback
+    const errorMessage = error?.message || "";
+    if (errorMessage.includes("401") || errorMessage.includes("403") || errorMessage.includes("API key")) {
+      throw new Error("AUTHENTICATION_FAILED");
+    }
+
+    // Return empty array instead of throwing generic errors to allow other workers to continue
     return [];
   }
 };

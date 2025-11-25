@@ -72,10 +72,18 @@ const App: React.FC = () => {
                     });
                     setLoadedCount(prev => prev + newBatch.length);
                 }
-            } catch (err) {
+            } catch (err: any) {
                 console.error(`Worker ${workerId}: Batch ${batchIdx} failed`, err);
-                // We could re-queue it, but for now let's skip to keep momentum.
-                // Or we can add a visual error indicator.
+                
+                // If it's an Auth error, we should probably stop everything and alert the user
+                if (err.message === "AUTHENTICATION_FAILED") {
+                    setError("API Key Error: Please check your 'API_KEY' environment variable in Vercel settings.");
+                    generationActive.current = false; // Stop other workers
+                    setIsGenerating(false);
+                    return; // Exit worker
+                }
+
+                // For other errors, we might skip or retry (simplified here to skip)
             }
         }
     };
@@ -89,16 +97,19 @@ const App: React.FC = () => {
         await Promise.all(workers);
     } catch (e) {
         console.error("Global generation error", e);
-        setError("Network interruption. Some questions might be missing.");
+        // If error wasn't set by a worker already
+        if (!error) {
+            setError("Network interruption. Some questions might be missing.");
+        }
     } finally {
         // Only set generating to false if queue is truly empty or stopped
-        if (batchesQueue.length === 0) {
+        if (batchesQueue.length === 0 || !generationActive.current) {
             setIsGenerating(false);
         }
         generationActive.current = false;
     }
 
-  }, [role, questions.length]);
+  }, [role, questions.length, error]);
 
   const resetApp = () => {
     generationActive.current = false;
@@ -227,6 +238,25 @@ const App: React.FC = () => {
                 <LoadingProgress current={loadedCount} total={TARGET_TOTAL} />
              </div>
         )}
+        
+        {/* Error Display (Prominent if stopping generation) */}
+        {error && (
+            <div className="mx-auto max-w-2xl mt-8 p-6 bg-red-950/40 border border-red-500/50 rounded-xl text-center shadow-xl">
+                <div className="text-red-400 font-bold text-lg mb-2 flex items-center justify-center gap-2">
+                     <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                     </svg>
+                     Generation Stopped
+                </div>
+                <p className="text-red-200 mb-4">{error}</p>
+                <button 
+                    onClick={() => { setError(null); startGeneration(); }}
+                    className="px-4 py-2 bg-red-900/50 hover:bg-red-800 border border-red-700 rounded-lg text-red-100 transition-colors"
+                >
+                    Retry Connection
+                </button>
+            </div>
+        )}
 
         {/* State: Content Visible */}
         {questions.length > 0 && (
@@ -253,13 +283,6 @@ const App: React.FC = () => {
                     </div>
                 </div>
 
-                {error && (
-                    <div className="p-4 mb-6 text-sm text-red-200 bg-red-900/20 border border-red-800 rounded-lg flex items-center justify-between">
-                        <span>{error}</span>
-                        <button onClick={startGeneration} className="text-white underline hover:text-red-100">Try Continue</button>
-                    </div>
-                )}
-
                 <div className="space-y-6">
                     {filteredQuestions.map((q, idx) => (
                         <QuestionCard key={q.id} question={q} index={idx} />
@@ -274,7 +297,7 @@ const App: React.FC = () => {
                     </div>
                 )}
                 
-                {!isGenerating && loadedCount >= TARGET_TOTAL && (
+                {!isGenerating && !error && loadedCount >= TARGET_TOTAL && (
                     <div className="py-12 text-center">
                         <div className="inline-block p-4 rounded-full bg-green-500/10 text-green-400 mb-3">
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
