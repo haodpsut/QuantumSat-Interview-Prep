@@ -46,13 +46,13 @@ export const LoadingProgress: React.FC<LoadingProgressProps> = ({ current, total
         Constructing complex queries for Space-Air-Ground Integration & Quantum ML...
       </p>
       
-      <div className="inline-flex items-center gap-2 px-4 py-2 bg-space-950 rounded-full border border-space-800">
+      <div className="inline-flex items-center gap-2 px-4 py-2 bg-space-950 rounded-full border border-space-800 animate-pulse">
         <span className="relative flex h-2 w-2">
           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-quantum-400 opacity-75"></span>
           <span className="relative inline-flex rounded-full h-2 w-2 bg-quantum-500"></span>
         </span>
-        <span className="text-xs font-mono text-quantum-300">
-            Fetching Batch: {Math.floor(current / 20) + 1}
+        <span className="text-xs font-mono text-quantum-300 font-bold tracking-wider">
+            TURBO MODE: PARALLEL LOADING
         </span>
       </div>
     </div>

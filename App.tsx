@@ -44,32 +44,61 @@ const App: React.FC = () => {
 
     const totalBatches = Math.ceil(TARGET_TOTAL / BATCH_SIZE);
     
-    // Loop through batches to reach target
-    // We start from current batch index based on loaded count
-    const startBatchIndex = Math.floor(loadedCount / BATCH_SIZE);
-
-    for (let i = startBatchIndex; i < totalBatches; i++) {
-        if (!generationActive.current) break;
-
-        try {
-            const newBatch = await generateQuestionBatch(role, BATCH_SIZE, i);
-            
-            setQuestions(prev => {
-                const updated = [...prev, ...newBatch];
-                setLoadedCount(updated.length);
-                return updated;
-            });
-
-        } catch (err) {
-            console.error("Batch failed", err);
-            setError(`Network interruption on batch ${i+1}. Some questions may be missing.`);
-            // Don't break completely, just stop generation loop so user can try 'continue'
-            break; 
-        }
+    // Determine which batches are missing
+    // We assume sequential batch indices for simplicity of the loop
+    const currentBatchesCount = Math.floor(loadedCount / BATCH_SIZE);
+    const batchesToFetch: number[] = [];
+    
+    for (let i = currentBatchesCount; i < totalBatches; i++) {
+        batchesToFetch.push(i);
     }
 
-    generationActive.current = false;
-    setIsGenerating(false);
+    // TURBO MODE: Launch requests in parallel with a slight stagger
+    // to avoid hitting instant rate limits while keeping it very fast.
+    const promises = batchesToFetch.map((batchIndex, idx) => {
+        return new Promise<void>(async (resolve) => {
+            // Stagger requests by 250ms each to be kind to the API
+            await new Promise(r => setTimeout(r, idx * 250));
+
+            if (!generationActive.current) {
+                resolve();
+                return;
+            }
+
+            try {
+                const newBatch = await generateQuestionBatch(role, BATCH_SIZE, batchIndex);
+                
+                if (generationActive.current) {
+                    setQuestions(prev => {
+                        const updated = [...prev, ...newBatch];
+                        // Sort by ID (which contains batch index) to keep order roughly logical
+                        // or just append. Appending is fine for "Random" feel, 
+                        // but let's sort by batch ID embedded in ID string to keep topic clusters somewhat organized if needed.
+                        // For now, simple append is faster and feels more responsive.
+                        setLoadedCount(prevCount => prevCount + newBatch.length);
+                        return updated;
+                    });
+                }
+            } catch (err) {
+                console.error(`Batch ${batchIndex} failed`, err);
+                // We don't stop the whole process, just log this batch failed.
+                // Optionally we could retry here.
+            } finally {
+                resolve();
+            }
+        });
+    });
+
+    try {
+        await Promise.all(promises);
+    } catch (e) {
+        console.error("Global generation error", e);
+        setError("Some batches failed to load. Please try continuing.");
+    } finally {
+        generationActive.current = false;
+        setIsGenerating(false);
+    }
+
   }, [role, loadedCount, questions.length]);
 
   const resetApp = () => {
@@ -169,11 +198,11 @@ const App: React.FC = () => {
           <div className="flex-1 max-w-md mx-4">
              <div className="flex justify-between text-xs text-slate-400 mb-1">
                 <span>Loaded: {loadedCount}/{TARGET_TOTAL}</span>
-                {isGenerating && <span className="text-quantum-400 animate-pulse">Generating...</span>}
+                {isGenerating && <span className="text-quantum-400 animate-pulse font-bold tracking-wide">TURBO LOADING...</span>}
              </div>
              <div className="w-full bg-space-800 rounded-full h-2 overflow-hidden">
                 <div 
-                    className="bg-gradient-to-r from-quantum-500 to-galaxy-500 h-2 rounded-full transition-all duration-700 ease-out"
+                    className="bg-gradient-to-r from-quantum-500 to-galaxy-500 h-2 rounded-full transition-all duration-300 ease-out"
                     style={{ width: `${(loadedCount / TARGET_TOTAL) * 100}%` }}
                 ></div>
              </div>
@@ -239,7 +268,7 @@ const App: React.FC = () => {
                 {isGenerating && (
                     <div className="py-12 text-center">
                         <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-quantum-500 mb-3"></div>
-                        <p className="text-slate-500 text-sm">Analyzing current set & generating more questions...</p>
+                        <p className="text-slate-500 text-sm">Turbo mode: Fetching remaining batches in parallel...</p>
                     </div>
                 )}
                 
