@@ -43,7 +43,7 @@ export const LoadingProgress: React.FC<LoadingProgressProps> = ({ current, total
       
       <h3 className="text-xl font-semibold text-slate-100 mb-2">Generating Interview Set</h3>
       <p className="text-sm text-slate-400 mb-6">
-        Constructing complex queries for Space-Air-Ground Integration & Quantum ML...
+        Streaming questions in micro-batches (5x)...
       </p>
       
       <div className="inline-flex items-center gap-2 px-4 py-2 bg-space-950 rounded-full border border-space-800 animate-pulse">
@@ -52,7 +52,7 @@ export const LoadingProgress: React.FC<LoadingProgressProps> = ({ current, total
           <span className="relative inline-flex rounded-full h-2 w-2 bg-quantum-500"></span>
         </span>
         <span className="text-xs font-mono text-quantum-300 font-bold tracking-wider">
-            TURBO MODE: PARALLEL LOADING
+            WORKER POOL ACTIVE
         </span>
       </div>
     </div>

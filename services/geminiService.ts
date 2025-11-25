@@ -16,7 +16,7 @@ const responseSchema: Schema = {
         type: Type.OBJECT,
         properties: {
           question: { type: Type.STRING },
-          answer: { type: Type.STRING, description: "Comprehensive answer key" },
+          answer: { type: Type.STRING, description: "Concise yet comprehensive answer key" },
         },
         required: ["question", "answer"],
       },
@@ -38,27 +38,19 @@ export const generateQuestionBatch = async (
   batchSize: number,
   batchIndex: number
 ): Promise<InterviewQuestion[]> => {
+  // Using a very direct prompt to ensure speed.
   const prompt = `
-    Generate ${batchSize} interview questions for a candidate applying for a ${role} position.
+    Generate ${batchSize} interview questions for a ${role} candidate.
+    Batch #${batchIndex + 1}.
+
+    **Topics:**
+    - Mix of Technical (Quantum AI, GNN, 6G, SAGINs) and Behavioral.
+    - If Technical: focus on integration of AI in Satellite networks or Quantum security.
     
-    This is Batch #${batchIndex + 1}.
-
-    **Distribution Strategy:**
-    - 70% Technical questions focused on: 
-        1. Quantum AI (QML, Federated Learning, GNN).
-        2. Satellite Networks (6G, SAGINs, NTN).
-    - 30% General Communication & Behavioral questions (e.g., "Tell me about yourself", "How do you handle conflict?", "Explain a complex concept to a layman").
-
-    **Technical Depth:**
-    - Ask about integrating GNNs with satellite topology constraints.
-    - Challenges of Federated Learning in high-latency NTN.
-    - Quantum security in 6G.
-
-    **Language Requirement:**
-    - Provide accurate English (en) content.
-    - Provide accurate Vietnamese (vi) translations for both question and answer.
-
-    Output must be a valid JSON array matching the schema.
+    **Requirements:**
+    - English (en) and Vietnamese (vi) translations.
+    - Answers must be **concise** but accurate (approx 2-3 sentences max).
+    - Output pure JSON array.
   `;
 
   try {
@@ -68,7 +60,7 @@ export const generateQuestionBatch = async (
       config: {
         responseMimeType: "application/json",
         responseSchema: responseSchema,
-        temperature: 0.85, // High temperature for variety
+        temperature: 0.8, // Slightly lower temperature for faster, more deterministic output
       },
     });
 
@@ -80,10 +72,11 @@ export const generateQuestionBatch = async (
     // Add unique IDs
     return parsedData.map((item: any, index: number) => ({
       ...item,
-      id: `batch-${batchIndex}-q-${index}-${Date.now()}`,
+      id: `batch-${batchIndex}-q-${index}-${Date.now()}-${Math.random()}`,
     }));
   } catch (error) {
     console.error("Error generating batch:", error);
-    throw error;
+    // Return empty array instead of throwing to allow other workers to continue
+    return [];
   }
 };

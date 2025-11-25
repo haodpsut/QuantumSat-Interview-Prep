@@ -6,7 +6,8 @@ import { InterviewQuestion, RoleType, Topic } from './types';
 
 // Constants
 const TARGET_TOTAL = 100;
-const BATCH_SIZE = 20; 
+const BATCH_SIZE = 5; // Reduced to 5 for lightning-fast updates
+const MAX_CONCURRENT_REQUESTS = 3; // Keep 3 parallel workers
 
 const App: React.FC = () => {
   // App State: 'SETUP' | 'PRACTICE'
@@ -44,62 +45,60 @@ const App: React.FC = () => {
 
     const totalBatches = Math.ceil(TARGET_TOTAL / BATCH_SIZE);
     
-    // Determine which batches are missing
-    // We assume sequential batch indices for simplicity of the loop
-    const currentBatchesCount = Math.floor(loadedCount / BATCH_SIZE);
-    const batchesToFetch: number[] = [];
-    
-    for (let i = currentBatchesCount; i < totalBatches; i++) {
-        batchesToFetch.push(i);
+    // Determine which batches need to be fetched (0 to 19 typically)
+    // We calculate based on currently loaded count
+    const currentBatchIndex = Math.floor(questions.length / BATCH_SIZE);
+    const batchesQueue: number[] = [];
+    for (let i = currentBatchIndex; i < totalBatches; i++) {
+        batchesQueue.push(i);
     }
 
-    // TURBO MODE: Launch requests in parallel with a slight stagger
-    // to avoid hitting instant rate limits while keeping it very fast.
-    const promises = batchesToFetch.map((batchIndex, idx) => {
-        return new Promise<void>(async (resolve) => {
-            // Stagger requests by 250ms each to be kind to the API
-            await new Promise(r => setTimeout(r, idx * 250));
-
-            if (!generationActive.current) {
-                resolve();
-                return;
-            }
+    // WORKER POOL PATTERN
+    // We define a 'worker' function that keeps picking tasks from the queue until empty.
+    const worker = async (workerId: number) => {
+        while (batchesQueue.length > 0 && generationActive.current) {
+            // Take the next batch index from the queue
+            const batchIdx = batchesQueue.shift(); 
+            if (batchIdx === undefined) break;
 
             try {
-                const newBatch = await generateQuestionBatch(role, BATCH_SIZE, batchIndex);
+                // Fetch data
+                const newBatch = await generateQuestionBatch(role, BATCH_SIZE, batchIdx);
                 
                 if (generationActive.current) {
                     setQuestions(prev => {
-                        const updated = [...prev, ...newBatch];
-                        // Sort by ID (which contains batch index) to keep order roughly logical
-                        // or just append. Appending is fine for "Random" feel, 
-                        // but let's sort by batch ID embedded in ID string to keep topic clusters somewhat organized if needed.
-                        // For now, simple append is faster and feels more responsive.
-                        setLoadedCount(prevCount => prevCount + newBatch.length);
-                        return updated;
+                        // Append new questions
+                        return [...prev, ...newBatch];
                     });
+                    setLoadedCount(prev => prev + newBatch.length);
                 }
             } catch (err) {
-                console.error(`Batch ${batchIndex} failed`, err);
-                // We don't stop the whole process, just log this batch failed.
-                // Optionally we could retry here.
-            } finally {
-                resolve();
+                console.error(`Worker ${workerId}: Batch ${batchIdx} failed`, err);
+                // We could re-queue it, but for now let's skip to keep momentum.
+                // Or we can add a visual error indicator.
             }
-        });
-    });
+        }
+    };
+
+    // Spawn workers
+    const workers = Array(MAX_CONCURRENT_REQUESTS)
+        .fill(null)
+        .map((_, idx) => worker(idx));
 
     try {
-        await Promise.all(promises);
+        await Promise.all(workers);
     } catch (e) {
         console.error("Global generation error", e);
-        setError("Some batches failed to load. Please try continuing.");
+        setError("Network interruption. Some questions might be missing.");
     } finally {
+        // Only set generating to false if queue is truly empty or stopped
+        if (batchesQueue.length === 0) {
+            setIsGenerating(false);
+        }
         generationActive.current = false;
-        setIsGenerating(false);
     }
 
-  }, [role, loadedCount, questions.length]);
+  }, [role, questions.length]);
 
   const resetApp = () => {
     generationActive.current = false;
@@ -113,6 +112,9 @@ const App: React.FC = () => {
   const filteredQuestions = questions.filter(q => {
     if (filterTopic === 'All') return true;
     const search = filterTopic.toLowerCase();
+    // Helper to map simplified filter to complex categories
+    if (search === 'quantum') return q.topic.toLowerCase().includes('quantum') || q.category.toLowerCase().includes('quantum');
+    if (search === 'satellite') return q.topic.toLowerCase().includes('6g') || q.topic.toLowerCase().includes('satellite') || q.topic.toLowerCase().includes('ntn');
     return q.category.toLowerCase().includes(search) || q.topic.toLowerCase().includes(search);
   });
 
@@ -198,7 +200,7 @@ const App: React.FC = () => {
           <div className="flex-1 max-w-md mx-4">
              <div className="flex justify-between text-xs text-slate-400 mb-1">
                 <span>Loaded: {loadedCount}/{TARGET_TOTAL}</span>
-                {isGenerating && <span className="text-quantum-400 animate-pulse font-bold tracking-wide">TURBO LOADING...</span>}
+                {isGenerating && <span className="text-quantum-400 animate-pulse font-bold tracking-wide">TURBO MODE: {Math.min(MAX_CONCURRENT_REQUESTS, 3)}x Parallel</span>}
              </div>
              <div className="w-full bg-space-800 rounded-full h-2 overflow-hidden">
                 <div 
